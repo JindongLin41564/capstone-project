@@ -18,7 +18,7 @@ if __name__ == "__main__":
     region = os.getenv("REGION", "us-central1")
     pipeline_root = required_env("PIPELINE_ROOT")
     pipeline_name = os.getenv("PIPELINE_NAME", "project-completion-dnn")
-    service_account = os.getenv("VERTEX_SERVICE_ACCOUNT")
+    service_account = os.getenv("VERTEX_SERVICE_ACCOUNT") or os.getenv("SERVICE_ACCOUNT")
 
     aiplatform.init(project=project_id, location=region, staging_bucket=pipeline_root)
 

@@ -20,7 +20,7 @@ steps:
       - PIPELINE_ROOT=${_PIPELINE_ROOT}
       - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
-      - SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
+      - VERTEX_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
       - PYTHONPATH=/workspace
       - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
       - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
@@ -68,7 +68,7 @@ steps:
       - PIPELINE_ROOT=${_PIPELINE_ROOT}
       - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
-      - SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
+      - VERTEX_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
       - PYTHONPATH=/workspace
       - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
       - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
