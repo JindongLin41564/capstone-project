@@ -31,11 +31,11 @@ steps:
         python -m compileall project_completion scripts
         python -m build --sdist project_completion
 
-        gcloud config set project "$PROJECT_ID"
-        gcloud storage cp project_completion/dist/*.tar.gz "$PACKAGE_URI"
+        gcloud config set project "$$PROJECT_ID"
+        gcloud storage cp project_completion/dist/*.tar.gz "$$PACKAGE_URI"
 
         python scripts/compile_pipeline.py
-        gcloud storage cp project_completion_kfp_pipeline.yaml "gs://$BUCKET/pipelines/project_completion_kfp_pipeline-${COMMIT_SHA}.yaml"
+        gcloud storage cp project_completion_kfp_pipeline.yaml "gs://$$BUCKET/pipelines/project_completion_kfp_pipeline-${COMMIT_SHA}.yaml"
 
         python scripts/submit_pipeline.py
 
