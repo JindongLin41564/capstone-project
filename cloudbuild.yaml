@@ -32,6 +32,10 @@ steps:
         python -m pip install -r requirements-ci.txt
         python -m pip install -e project_completion
 
+        touch project_completion/__init__.py
+        touch project_completion/pipeline_vertex/__init__.py
+        export PYTHONPATH="/workspace:$${PYTHONPATH:-}"
+
         python -m compileall project_completion scripts
         python -m build --sdist project_completion
 
@@ -69,6 +73,7 @@ steps:
       - -ceu
       - |
         . /workspace/venv/bin/activate
+        export PYTHONPATH="/workspace:$${PYTHONPATH:-}"
 
         python scripts/submit_pipeline.py
 
