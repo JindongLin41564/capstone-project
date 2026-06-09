@@ -1,4 +1,4 @@
 google-cloud-aiplatform==1.69.0
 google-cloud-pipeline-components==2.18.0
-kfp==2.16.1
+kfp==2.9.0
 pytest==8.3.3

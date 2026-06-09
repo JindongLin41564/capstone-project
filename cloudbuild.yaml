@@ -8,8 +8,8 @@ substitutions:
   _EVAL_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/valid/project-valid-*
 
 steps:
-  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
-    id: build-compile-submit-vertex-pipeline
+  - name: python:3.10-slim
+    id: build-and-compile-pipeline
     entrypoint: bash
     env:
       - PROJECT_ID=${_PROJECT_ID}
@@ -24,10 +24,7 @@ steps:
     args:
       - -ceu
       - |
-        apt-get update
-        apt-get install -y python3 python3-venv python3-pip
-
-        python3 -m venv /workspace/venv
+        python -m venv /workspace/venv
         . /workspace/venv/bin/activate
 
         python -m pip install --upgrade pip build
@@ -37,11 +34,39 @@ steps:
         python -m compileall project_completion scripts
         python -m build --sdist project_completion
 
+        python scripts/compile_pipeline.py
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    id: upload-artifacts-to-gcs
+    entrypoint: bash
+    env:
+      - PROJECT_ID=${_PROJECT_ID}
+      - BUCKET=${_BUCKET}
+      - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
+    args:
+      - -ceu
+      - |
         gcloud config set project "$$PROJECT_ID"
         gcloud storage cp project_completion/dist/*.tar.gz "$$PACKAGE_URI"
-
-        python scripts/compile_pipeline.py
         gcloud storage cp project_completion_kfp_pipeline.yaml "gs://$$BUCKET/pipelines/project_completion_kfp_pipeline-${COMMIT_SHA}.yaml"
+
+  - name: python:3.10-slim
+    id: submit-vertex-pipeline
+    entrypoint: bash
+    env:
+      - PROJECT_ID=${_PROJECT_ID}
+      - REGION=${_REGION}
+      - BUCKET=${_BUCKET}
+      - PIPELINE_NAME=${_PIPELINE_NAME}
+      - PIPELINE_ROOT=${_PIPELINE_ROOT}
+      - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
+      - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
+      - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
+      - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
+    args:
+      - -ceu
+      - |
+        . /workspace/venv/bin/activate
 
         python scripts/submit_pipeline.py
 
