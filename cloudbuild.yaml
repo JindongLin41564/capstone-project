@@ -24,6 +24,12 @@ steps:
     args:
       - -ceu
       - |
+        apt-get update
+        apt-get install -y python3 python3-venv python3-pip
+
+        python3 -m venv /workspace/venv
+        . /workspace/venv/bin/activate
+
         python -m pip install --upgrade pip build
         python -m pip install -r requirements-ci.txt
         python -m pip install -e project_completion
