@@ -1,0 +1,43 @@
+substitutions:
+  _PROJECT_ID: qwiklabs-asl-03-7c1aaee9a503
+  _REGION: us-central1
+  _BUCKET: qwiklabs-asl-03-7c1aaee9a503
+  _PIPELINE_NAME: project-completion-dnn
+  _PIPELINE_ROOT: gs://qwiklabs-asl-03-7c1aaee9a503/project_completion/kfp_pipeline
+  _TRAIN_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/train/project-train-*
+  _EVAL_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/valid/project-valid-*
+
+steps:
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    id: build-compile-submit-vertex-pipeline
+    entrypoint: bash
+    env:
+      - PROJECT_ID=${_PROJECT_ID}
+      - REGION=${_REGION}
+      - BUCKET=${_BUCKET}
+      - PIPELINE_NAME=${_PIPELINE_NAME}
+      - PIPELINE_ROOT=${_PIPELINE_ROOT}
+      - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
+      - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
+      - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
+      - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
+    args:
+      - -ceu
+      - |
+        python -m pip install --upgrade pip build
+        python -m pip install -r requirements-ci.txt
+        python -m pip install -e project_completion
+
+        python -m compileall project_completion scripts
+        python -m build --sdist project_completion
+
+        gcloud config set project "$PROJECT_ID"
+        gcloud storage cp project_completion/dist/*.tar.gz "$PACKAGE_URI"
+
+        python scripts/compile_pipeline.py
+        gcloud storage cp project_completion_kfp_pipeline.yaml "gs://$BUCKET/pipelines/project_completion_kfp_pipeline-${COMMIT_SHA}.yaml"
+
+        python scripts/submit_pipeline.py
+
+options:
+  logging: CLOUD_LOGGING_ONLY
