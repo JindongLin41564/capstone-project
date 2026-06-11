@@ -1,6 +1,5 @@
 """Vertex AI Pipeline for the project completion DNN trainer."""
 
-import math
 import os
 from datetime import datetime
 
@@ -38,39 +37,16 @@ ENDPOINT_DISPLAY_NAME = os.getenv("ENDPOINT_DISPLAY_NAME", f"{PIPELINE_NAME}-end
 SERVING_MACHINE_TYPE = os.getenv("SERVING_MACHINE_TYPE", "n1-standard-2")
 SERVING_MIN_REPLICA_COUNT = int(os.getenv("SERVING_MIN_REPLICA_COUNT", "1"))
 SERVING_MAX_REPLICA_COUNT = int(os.getenv("SERVING_MAX_REPLICA_COUNT", "1"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "64"))
+EPOCHS = int(os.getenv("EPOCHS", "10"))
+TRAIN_STEPS_PER_EPOCH = int(os.getenv("TRAIN_STEPS_PER_EPOCH", "1"))
+VALIDATION_STEPS = int(os.getenv("VALIDATION_STEPS", "1"))
 HIDDEN_UNITS = os.getenv("HIDDEN_UNITS", "128 64 32")
+LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
+DROPOUT_RATE = float(os.getenv("DROPOUT_RATE", "0.0"))
+LABEL_SCALE = float(os.getenv("LABEL_SCALE", "365.0"))
 SERVICE_ACCOUNT = os.getenv("VERTEX_SERVICE_ACCOUNT") or os.getenv("SERVICE_ACCOUNT")
 TENSORBOARD_RESOURCE_NAME = os.getenv("TENSORBOARD_RESOURCE_NAME") or os.getenv("VERTEX_TENSORBOARD")
-
-
-def _env_int(name, default):
-    return int(os.getenv(name, str(default)))
-
-
-def _env_float(name, default):
-    return float(os.getenv(name, str(default)))
-
-
-def _resolve_steps(env_name, table_env_name, batch_size):
-    raw_value = os.getenv(env_name, "AUTO")
-    if raw_value.upper() != "AUTO":
-        return int(raw_value)
-
-    table_name = os.getenv(table_env_name)
-    if not table_name:
-        raise ValueError(f"{env_name}=AUTO requires {table_env_name} to be set")
-
-    from google.cloud import bigquery
-
-    bq_client = bigquery.Client(project=PROJECT_ID)
-    rows = bq_client.get_table(table_name).num_rows
-    if rows == 0:
-        raise ValueError(f"{table_name} has 0 rows")
-
-    steps = max(1, math.ceil(rows / batch_size))
-    print(f"{env_name}=AUTO -> {steps} steps from {rows} rows in {table_name}")
-    return steps
-
 
 missing = [
     name for name, value in {
@@ -84,14 +60,6 @@ missing = [
 ]
 if missing:
     raise ValueError(f"Missing required environment variables for pipeline compilation: {missing}")
-
-BATCH_SIZE = _env_int("BATCH_SIZE", 64)
-EPOCHS = _env_int("EPOCHS", 10)
-TRAIN_STEPS_PER_EPOCH = _resolve_steps("TRAIN_STEPS_PER_EPOCH", "TRAIN_TABLE", BATCH_SIZE)
-VALIDATION_STEPS = _resolve_steps("VALIDATION_STEPS", "VALID_TABLE", BATCH_SIZE)
-LEARNING_RATE = _env_float("LEARNING_RATE", 0.001)
-DROPOUT_RATE = _env_float("DROPOUT_RATE", 0.0)
-LABEL_SCALE = _env_float("LABEL_SCALE", 365.0)
 
 
 @dsl.pipeline(
