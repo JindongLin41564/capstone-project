@@ -45,6 +45,8 @@ HIDDEN_UNITS = os.getenv("HIDDEN_UNITS", "128 64 32")
 LEARNING_RATE = float(os.getenv("LEARNING_RATE", "0.001"))
 DROPOUT_RATE = float(os.getenv("DROPOUT_RATE", "0.0"))
 LABEL_SCALE = float(os.getenv("LABEL_SCALE", "365.0"))
+SERVICE_ACCOUNT = os.getenv("VERTEX_SERVICE_ACCOUNT") or os.getenv("SERVICE_ACCOUNT")
+TENSORBOARD_RESOURCE_NAME = os.getenv("TENSORBOARD_RESOURCE_NAME") or os.getenv("VERTEX_TENSORBOARD")
 
 missing = [
     name for name, value in {
@@ -95,13 +97,19 @@ def create_pipeline():
         }
     ]
 
-    training_task = CustomTrainingJobOp(
-        project=PROJECT_ID,
-        location=REGION,
-        display_name=f"{PIPELINE_NAME}-training-job",
-        worker_pool_specs=worker_pool_specs,
-        base_output_directory=MODEL_OUTPUT_DIR,
-    )
+    custom_training_job_args = {
+        "project": PROJECT_ID,
+        "location": REGION,
+        "display_name": f"{PIPELINE_NAME}-training-job",
+        "worker_pool_specs": worker_pool_specs,
+        "base_output_directory": MODEL_OUTPUT_DIR,
+    }
+    if SERVICE_ACCOUNT:
+        custom_training_job_args["service_account"] = SERVICE_ACCOUNT
+    if TENSORBOARD_RESOURCE_NAME:
+        custom_training_job_args["tensorboard"] = TENSORBOARD_RESOURCE_NAME
+
+    training_task = CustomTrainingJobOp(**custom_training_job_args)
 
     saved_model_importer = dsl.importer(
         artifact_uri=f"{MODEL_OUTPUT_DIR}/savedmodel",

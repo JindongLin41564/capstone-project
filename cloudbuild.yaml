@@ -4,6 +4,7 @@ substitutions:
   _BUCKET: qwiklabs-asl-03-7c1aaee9a503
   _PIPELINE_NAME: project-completion-dnn
   _PIPELINE_ROOT: gs://qwiklabs-asl-03-7c1aaee9a503/project_completion/kfp_pipeline
+  _TENSORBOARD_DISPLAY_NAME: project-forecast-tensorboard
   _TRAIN_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/train/project-train-*
   _EVAL_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/valid/project-valid-*
   _SCHEMA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/schema/feature_schema.json
@@ -19,6 +20,7 @@ steps:
       - BUCKET=${_BUCKET}
       - PIPELINE_NAME=${_PIPELINE_NAME}
       - PIPELINE_ROOT=${_PIPELINE_ROOT}
+      - TENSORBOARD_DISPLAY_NAME=${_TENSORBOARD_DISPLAY_NAME}
       - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
       - SCHEMA_PATH=${_SCHEMA_PATH}
@@ -43,6 +45,8 @@ steps:
         python -m compileall project_completion scripts
         python -m build --sdist project_completion
 
+        export TENSORBOARD_RESOURCE_NAME="$$(python scripts/ensure_tensorboard.py)"
+        echo "Using Vertex AI TensorBoard: $$TENSORBOARD_RESOURCE_NAME"
         python scripts/compile_pipeline.py
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
