@@ -8,6 +8,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train_data_path", required=True)
     parser.add_argument("--eval_data_path", required=True)
+    parser.add_argument("--schema_path", default="")
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=10)

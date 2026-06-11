@@ -6,6 +6,7 @@ substitutions:
   _PIPELINE_ROOT: gs://qwiklabs-asl-03-7c1aaee9a503/project_completion/kfp_pipeline
   _TRAIN_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/train/project-train-*
   _EVAL_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/valid/project-valid-*
+  _SCHEMA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/schema/feature_schema.json
   _SERVICE_ACCOUNT: cloud-build-vertex-runner@qwiklabs-asl-03-7c1aaee9a503.iam.gserviceaccount.com
 
 steps:
@@ -20,6 +21,7 @@ steps:
       - PIPELINE_ROOT=${_PIPELINE_ROOT}
       - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
+      - SCHEMA_PATH=${_SCHEMA_PATH}
       - VERTEX_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
       - PYTHONPATH=/workspace
       - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
@@ -68,6 +70,7 @@ steps:
       - PIPELINE_ROOT=${_PIPELINE_ROOT}
       - TRAIN_DATA_PATH=${_TRAIN_DATA_PATH}
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
+      - SCHEMA_PATH=${_SCHEMA_PATH}
       - VERTEX_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
       - PYTHONPATH=/workspace
       - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}

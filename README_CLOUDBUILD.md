@@ -82,3 +82,10 @@ gcloud iam service-accounts add-iam-policy-binding "$BUILD_SA" \
 After that, every push or merge to `main` starts Cloud Build, uploads the
 trainer package to Cloud Storage, compiles the KFP pipeline, and submits a
 Vertex AI Pipeline job.
+
+Before running the pipeline, generate the train/valid CSV files and schema file
+from the notebook/data-processing step:
+
+- `gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/train/project-train-*`
+- `gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/valid/project-valid-*`
+- `gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/schema/feature_schema.json`

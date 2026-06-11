@@ -17,48 +17,59 @@ from keras.layers import Concatenate, Dense, Dropout, Embedding, Flatten, Input,
 from keras.metrics import MeanAbsoluteError, RootMeanSquaredError
 
 AUTOTUNE = tf.data.AUTOTUNE
-LABEL = "days_to_S90"
-CATEGORICAL_FEATURES = ["RID", "ZDP", "GID", "MID"]
-NUMERIC_FEATURES = [
-    "days_S44_from_S30",
-    "days_S51_from_S30",
-    "days_S52_from_S30",
-    "days_S56_from_S30",
-    "days_S68_from_S30",
-    "days_S71_from_S30",
-]
-FEATURE_COLUMNS = CATEGORICAL_FEATURES + NUMERIC_FEATURES
-COLUMNS = [
-    LABEL,
-    "RID", "ZDP", "GID", "MID",
-    "days_S44_from_S30", "days_S51_from_S30", "days_S52_from_S30",
-    "days_S56_from_S30", "days_S68_from_S30", "days_S71_from_S30",
-    "SID", "PID", "key",
-]
-CSV_DEFAULTS = [
-    [0.0],
-    ["UNKNOWN"], ["UNKNOWN"], ["UNKNOWN"], ["UNKNOWN"],
-    [0.0], [0.0], [0.0], [0.0], [0.0], [0.0],
-    [""], [""], ["unused"],
-]
 
 
-def parse_csv(row, label_scale=1.0):
-    fields = tf.io.decode_csv(row, record_defaults=CSV_DEFAULTS)
-    values = dict(zip(COLUMNS, fields))
-    label = values.pop(LABEL)
+def infer_schema_path(train_data_path):
+    if "/train/" in train_data_path:
+        return train_data_path.split("/train/", 1)[0] + "/schema/feature_schema.json"
+    return ""
+
+
+def load_feature_schema(schema_path):
+    with tf.io.gfile.GFile(schema_path, "r") as f:
+        schema = json.load(f)
+
+    required_keys = ["label", "categorical_features", "numeric_features", "csv_columns"]
+    missing = [key for key in required_keys if key not in schema]
+    if missing:
+        raise ValueError(f"Feature schema is missing required keys: {missing}")
+    if not schema["categorical_features"] and not schema["numeric_features"]:
+        raise ValueError("Feature schema must define at least one categorical or numeric feature")
+    return schema
+
+
+def csv_defaults(schema):
+    label = schema["label"]
+    categorical_features = set(schema["categorical_features"])
+    numeric_features = set(schema["numeric_features"])
+    defaults = []
+
+    for column in schema["csv_columns"]:
+        if column == label or column in numeric_features:
+            defaults.append([0.0])
+        elif column in categorical_features:
+            defaults.append(["UNKNOWN"])
+        else:
+            defaults.append([""])
+    return defaults
+
+
+def parse_csv(row, schema, label_scale=1.0):
+    fields = tf.io.decode_csv(row, record_defaults=csv_defaults(schema))
+    values = dict(zip(schema["csv_columns"], fields))
+    label = values.pop(schema["label"])
     label = tf.cast(label, tf.float32) / tf.cast(label_scale, tf.float32)
 
     features = {}
-    for name in CATEGORICAL_FEATURES:
+    for name in schema["categorical_features"]:
         features[name] = tf.reshape(values[name], [1])
-    for name in NUMERIC_FEATURES:
+    for name in schema["numeric_features"]:
         features[name] = tf.reshape(values[name], [1])
 
     return features, label
 
 
-def create_dataset(pattern, batch_size, num_repeat=1, mode="eval", label_scale=1.0):
+def create_dataset(pattern, batch_size, schema, num_repeat=1, mode="eval", label_scale=1.0):
     ds = tf.data.Dataset.list_files(pattern, shuffle=(mode == "train"))
     ds = ds.interleave(
         tf.data.TextLineDataset,
@@ -66,7 +77,7 @@ def create_dataset(pattern, batch_size, num_repeat=1, mode="eval", label_scale=1
         num_parallel_calls=AUTOTUNE,
     )
     ds = ds.map(
-        lambda row: parse_csv(row, label_scale=label_scale),
+        lambda row: parse_csv(row, schema=schema, label_scale=label_scale),
         num_parallel_calls=AUTOTUNE,
     )
     if mode == "train":
@@ -79,17 +90,18 @@ def create_dataset(pattern, batch_size, num_repeat=1, mode="eval", label_scale=1
     return ds
 
 
-def build_preprocessing_layers(train_data_path, batch_size):
+def build_preprocessing_layers(train_data_path, batch_size, schema):
     sample_ds = create_dataset(
         train_data_path,
         batch_size=batch_size,
+        schema=schema,
         num_repeat=1,
         mode="eval",
         label_scale=1.0,
     )
 
     lookups = {}
-    for name in CATEGORICAL_FEATURES:
+    for name in schema["categorical_features"]:
         lookup = StringLookup(
             output_mode="int",
             num_oov_indices=1,
@@ -99,13 +111,15 @@ def build_preprocessing_layers(train_data_path, batch_size):
         lookup.adapt(sample_ds.map(lambda features, label, n=name: features[n]))
         lookups[name] = lookup
 
-    normalizer = Normalization(axis=-1, name="numeric_normalization")
-    numeric_ds = sample_ds.map(
-        lambda features, label: tf.concat(
-            [tf.cast(features[name], tf.float32) for name in NUMERIC_FEATURES], axis=-1
+    normalizer = None
+    if schema["numeric_features"]:
+        normalizer = Normalization(axis=-1, name="numeric_normalization")
+        numeric_ds = sample_ds.map(
+            lambda features, label: tf.concat(
+                [tf.cast(features[name], tf.float32) for name in schema["numeric_features"]], axis=-1
+            )
         )
-    )
-    normalizer.adapt(numeric_ds)
+        normalizer.adapt(numeric_ds)
 
     return lookups, normalizer
 
@@ -114,21 +128,21 @@ def embedding_dim(vocabulary_size):
     return min(16, max(2, int(np.ceil(np.sqrt(vocabulary_size)))))
 
 
-def build_dnn_model(hidden_units, learning_rate, dropout_rate, lookups, normalizer):
+def build_dnn_model(hidden_units, learning_rate, dropout_rate, lookups, normalizer, schema):
     inputs = {
         name: Input(name=name, shape=(1,), dtype="string")
-        for name in CATEGORICAL_FEATURES
+        for name in schema["categorical_features"]
     }
     inputs.update(
         {
             name: Input(name=name, shape=(1,), dtype="float32")
-            for name in NUMERIC_FEATURES
+            for name in schema["numeric_features"]
         }
     )
 
     encoded_features = []
     embedding_config = {}
-    for name in CATEGORICAL_FEATURES:
+    for name in schema["categorical_features"]:
         lookup = lookups[name]
         vocab_size = lookup.vocabulary_size()
         dim = embedding_dim(vocab_size)
@@ -141,12 +155,19 @@ def build_dnn_model(hidden_units, learning_rate, dropout_rate, lookups, normaliz
         )(category_id)
         encoded_features.append(Flatten(name=f"{name}_embedding_flatten")(category_embedding))
 
-    numeric_values = Concatenate(name="numeric_features")(
-        [inputs[name] for name in NUMERIC_FEATURES]
-    )
-    encoded_features.append(normalizer(numeric_values))
+    if schema["numeric_features"]:
+        if len(schema["numeric_features"]) == 1:
+            numeric_values = inputs[schema["numeric_features"][0]]
+        else:
+            numeric_values = Concatenate(name="numeric_features")(
+                [inputs[name] for name in schema["numeric_features"]]
+            )
+        encoded_features.append(normalizer(numeric_values))
 
-    x = Concatenate(name="all_features")(encoded_features)
+    if len(encoded_features) == 1:
+        x = encoded_features[0]
+    else:
+        x = Concatenate(name="all_features")(encoded_features)
     for index, units in enumerate(hidden_units):
         x = Dense(units, activation="relu", name=f"hidden_{index + 1}")(x)
         if dropout_rate > 0:
@@ -155,7 +176,7 @@ def build_dnn_model(hidden_units, learning_rate, dropout_rate, lookups, normaliz
     # The model predicts scaled days_to_S90. Metrics during fit are scaled too;
     # final metrics below are converted back to original day units.
     output = Dense(1, name="scaled_days_to_S90")(x)
-    model = keras.Model(inputs=list(inputs.values()), outputs=output)
+    model = keras.Model(inputs=inputs, outputs=output)
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss="mse",
@@ -203,6 +224,10 @@ def train_and_evaluate(hparams):
     output_dir = hparams["output_dir"].rstrip("/")
     train_data_path = hparams["train_data_path"]
     eval_data_path = hparams["eval_data_path"]
+    schema_path = hparams.get("schema_path") or os.environ.get("SCHEMA_PATH") or infer_schema_path(train_data_path)
+    if not schema_path:
+        raise ValueError("schema_path is required, or train_data_path must contain '/train/'")
+    schema = load_feature_schema(schema_path)
 
     if tf.io.gfile.exists(output_dir):
         tf.io.gfile.rmtree(output_dir)
@@ -217,16 +242,18 @@ def train_and_evaluate(hparams):
     serving_model_export_path = os.path.join(output_dir, "savedmodel")
     metrics_path = os.path.join(output_dir, "metrics.json")
 
-    lookups, normalizer = build_preprocessing_layers(train_data_path, batch_size)
+    lookups, normalizer = build_preprocessing_layers(train_data_path, batch_size, schema)
     model, embedding_config = build_dnn_model(
-        hidden_units, learning_rate, dropout_rate, lookups, normalizer
+        hidden_units, learning_rate, dropout_rate, lookups, normalizer, schema
     )
     model.summary(print_fn=logging.info)
+    print("Feature schema:", json.dumps(schema, indent=2))
     print("Embedding config:", json.dumps(embedding_config, indent=2))
 
     train_ds = create_dataset(
         train_data_path,
         batch_size=batch_size,
+        schema=schema,
         num_repeat=None if train_steps_per_epoch else 1,
         mode="train",
         label_scale=label_scale,
@@ -234,6 +261,7 @@ def train_and_evaluate(hparams):
     eval_ds = create_dataset(
         eval_data_path,
         batch_size=batch_size,
+        schema=schema,
         num_repeat=None if validation_steps else 1,
         mode="eval",
         label_scale=label_scale,
@@ -241,6 +269,7 @@ def train_and_evaluate(hparams):
     eval_ds_for_metrics = create_dataset(
         eval_data_path,
         batch_size=batch_size,
+        schema=schema,
         num_repeat=1,
         mode="eval",
         label_scale=label_scale,
@@ -268,6 +297,8 @@ def train_and_evaluate(hparams):
             "learning_rate": learning_rate,
             "dropout_rate": dropout_rate,
             "label_scale": label_scale,
+            "schema_path": schema_path,
+            "feature_schema": schema,
             "embedding_config": embedding_config,
             "tensorboard_dir": tensorboard_dir,
         }

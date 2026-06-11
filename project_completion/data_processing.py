@@ -1,11 +1,19 @@
-"""Data processing helpers for the project completion notebook.
+"""Data processing helpers for Dataform-built project completion features.
 
-This module contains the BigQuery SQL and export contract that used to live in
-site_launch_prediction_main.ipynb. It is intentionally lightweight so the
-notebook can run local smoke checks without GCP credentials.
+Dataform owns feature engineering. This module only copies the final feature
+table, creates deterministic train/valid/test splits, exports CSV files, and
+writes the feature schema contract consumed by the trainer.
 """
 
+import json
 from dataclasses import dataclass
+
+
+LABEL_COLUMN = "days_to_S90"
+ID_COLUMNS = ["so_nr", "projekt_id"]
+EXCLUDE_PREFIXES = ["meta_"]
+CATEGORICAL_TYPES = {"STRING", "BOOL", "BOOLEAN"}
+NUMERIC_TYPES = {"INT64", "INTEGER", "FLOAT64", "FLOAT", "NUMERIC", "BIGNUMERIC"}
 
 
 @dataclass(frozen=True)
@@ -42,57 +50,40 @@ class DataProcessingConfig:
             return ""
         return f"{self.bucket_uri.rstrip('/')}/{self.table_prefix}"
 
+    @property
+    def schema_gcs_path(self) -> str:
+        if not self.data_gcs_prefix:
+            return ""
+        return f"{self.data_gcs_prefix}/schema/feature_schema.json"
+
 
 def build_preview_query(source_table: str) -> str:
     return f"""
-SELECT
-  RID,
-  SID,
-  PID,
-  ZDP,
-  GID,
-  MID,
-  S30,
-  S44,
-  S51,
-  S52,
-  S56,
-  S68,
-  S71,
-  S90
+SELECT *
 FROM `{source_table}`
-WHERE S30 IS NOT NULL
-  AND S90 IS NOT NULL
+WHERE {LABEL_COLUMN} IS NOT NULL
+  AND {LABEL_COLUMN} >= 0
+LIMIT 10
 """
 
 
 def build_feature_sql(source_table: str, feature_table: str) -> str:
     return f"""
 CREATE OR REPLACE TABLE `{feature_table}` AS
-SELECT
-  DATE_DIFF(DATE(S90), DATE(S30), DAY) AS days_to_S90,
-  COALESCE(CAST(RID AS STRING), 'UNKNOWN') AS RID,
-  COALESCE(CAST(ZDP AS STRING), 'UNKNOWN') AS ZDP,
-  COALESCE(CAST(GID AS STRING), 'UNKNOWN') AS GID,
-  COALESCE(CAST(MID AS STRING), 'UNKNOWN') AS MID,
-  DATE_DIFF(DATE(S44), DATE(S30), DAY) AS days_S44_from_S30,
-  DATE_DIFF(DATE(S51), DATE(S30), DAY) AS days_S51_from_S30,
-  DATE_DIFF(DATE(S52), DATE(S30), DAY) AS days_S52_from_S30,
-  DATE_DIFF(DATE(S56), DATE(S30), DAY) AS days_S56_from_S30,
-  DATE_DIFF(DATE(S68), DATE(S30), DAY) AS days_S68_from_S30,
-  DATE_DIFF(DATE(S71), DATE(S30), DAY) AS days_S71_from_S30,
-  COALESCE(CAST(SID AS STRING), '') AS SID,
-  COALESCE(CAST(PID AS STRING), '') AS PID,
-  'unused' AS key
+SELECT *
 FROM `{source_table}`
-WHERE S30 IS NOT NULL
-  AND S90 IS NOT NULL
-  AND DATE_DIFF(DATE(S90), DATE(S30), DAY) >= 0
+WHERE {LABEL_COLUMN} IS NOT NULL
+  AND {LABEL_COLUMN} >= 0
 """
 
 
 def build_split_sql(feature_table: str, train_table: str, valid_table: str, test_table: str) -> str:
-    split_expr = "ABS(MOD(FARM_FINGERPRINT(CONCAT(SID, '-', PID)), 100))"
+    split_expr = (
+        "ABS(MOD(FARM_FINGERPRINT(CONCAT("
+        "COALESCE(CAST(so_nr AS STRING), ''), '-', "
+        "COALESCE(CAST(projekt_id AS STRING), '')"
+        ")), 100))"
+    )
     return f"""
 CREATE OR REPLACE TABLE `{train_table}` AS
 SELECT * FROM `{feature_table}`
@@ -118,12 +109,66 @@ def build_export_jobs(config: DataProcessingConfig) -> list[tuple[str, str]]:
     ]
 
 
+def build_feature_schema(table) -> dict:
+    """Infer trainer feature roles from the BigQuery table schema."""
+
+    categorical_features = []
+    numeric_features = []
+    id_columns = []
+    excluded_columns = []
+    csv_columns = []
+    field_types = {}
+
+    for field in table.schema:
+        name = field.name
+        field_type = field.field_type.upper()
+        csv_columns.append(name)
+        field_types[name] = field_type
+
+        if name == LABEL_COLUMN:
+            continue
+        if name in ID_COLUMNS:
+            id_columns.append(name)
+            continue
+        if any(name.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
+            excluded_columns.append(name)
+            continue
+        if field_type in CATEGORICAL_TYPES:
+            categorical_features.append(name)
+            continue
+        if field_type in NUMERIC_TYPES:
+            numeric_features.append(name)
+            continue
+        excluded_columns.append(name)
+
+    if LABEL_COLUMN not in csv_columns:
+        raise ValueError(f"Feature table must contain label column: {LABEL_COLUMN}")
+    if not categorical_features and not numeric_features:
+        raise ValueError("Feature table has no supported categorical or numeric feature columns")
+
+    return {
+        "label": LABEL_COLUMN,
+        "id_columns": id_columns,
+        "excluded_columns": excluded_columns,
+        "categorical_features": categorical_features,
+        "numeric_features": numeric_features,
+        "csv_columns": csv_columns,
+        "field_types": field_types,
+    }
+
+
 def _bucket_and_prefix(gcs_uri: str) -> tuple[str, str]:
     if not gcs_uri.startswith("gs://"):
         raise ValueError(f"Expected gs:// URI, got: {gcs_uri}")
     path = gcs_uri.removeprefix("gs://")
     bucket, _, prefix = path.partition("/")
     return bucket, prefix.rstrip("/") + "/" if prefix else ""
+
+
+def _write_text_to_gcs(storage_client, gcs_uri: str, text: str) -> None:
+    bucket_name, prefix = _bucket_and_prefix(gcs_uri)
+    bucket = storage_client.bucket(bucket_name)
+    bucket.blob(prefix.rstrip("/")).upload_from_string(text, content_type="application/json")
 
 
 def run_bigquery_data_processing(bq_client, config: DataProcessingConfig, location: str) -> dict[str, int]:
@@ -148,14 +193,24 @@ def export_tables_to_gcs(
     storage_client=None,
     clean_existing: bool = True,
 ) -> None:
-    """Export train/valid/test tables as headerless CSV files."""
+    """Export train/valid/test tables and the schema contract used by training."""
 
     from google.cloud import bigquery
+    from google.cloud import storage
 
     if clean_existing and storage_client is not None:
         bucket_name, prefix = _bucket_and_prefix(config.data_gcs_prefix)
         for blob in storage_client.list_blobs(bucket_name, prefix=prefix):
             blob.delete()
+    if storage_client is None:
+        storage_client = storage.Client(project=config.project_id)
+
+    feature_schema = build_feature_schema(bq_client.get_table(config.feature_table))
+    _write_text_to_gcs(
+        storage_client,
+        config.schema_gcs_path,
+        json.dumps(feature_schema, indent=2, sort_keys=True),
+    )
 
     job_config = bigquery.job.ExtractJobConfig(
         destination_format=bigquery.DestinationFormat.CSV,

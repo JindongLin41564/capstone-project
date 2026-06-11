@@ -16,6 +16,7 @@ PIPELINE_ROOT = os.getenv("PIPELINE_ROOT")
 PACKAGE_URI = os.getenv("PACKAGE_URI")
 TRAIN_DATA_PATH = os.getenv("TRAIN_DATA_PATH")
 EVAL_DATA_PATH = os.getenv("EVAL_DATA_PATH")
+SCHEMA_PATH = os.getenv("SCHEMA_PATH")
 MODEL_OUTPUT_DIR = os.getenv(
     "MODEL_OUTPUT_DIR",
     f"{PIPELINE_ROOT}/trained_dnn_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -78,6 +79,8 @@ def create_pipeline():
         "--dropout_rate", str(DROPOUT_RATE),
         "--label_scale", str(LABEL_SCALE),
     ]
+    if SCHEMA_PATH:
+        train_args.extend(["--schema_path", SCHEMA_PATH])
 
     worker_pool_specs = [
         {
