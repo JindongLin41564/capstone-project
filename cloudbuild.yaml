@@ -9,6 +9,17 @@ substitutions:
   _EVAL_DATA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/valid/project-valid-*
   _SCHEMA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/schema/feature_schema.json
   _SERVICE_ACCOUNT: cloud-build-vertex-runner@qwiklabs-asl-03-7c1aaee9a503.iam.gserviceaccount.com
+  _TRAIN_TABLE: qwiklabs-asl-03-7c1aaee9a503.jindong_lin.project_completion_train
+  _VALID_TABLE: qwiklabs-asl-03-7c1aaee9a503.jindong_lin.project_completion_valid
+  _BATCH_SIZE: '64'
+  _EPOCHS: '20'
+  _TRAIN_STEPS_PER_EPOCH: AUTO
+  _VALIDATION_STEPS: AUTO
+  _HIDDEN_UNITS: 128 64 32
+  _LEARNING_RATE: '0.001'
+  _DROPOUT_RATE: '0.2'
+  _LABEL_SCALE: '365.0'
+  _TRAINING_IMAGE_URI: us-docker.pkg.dev/vertex-ai/training/tf-cpu.2-17.py310:latest
 
 steps:
   - name: python:3.10-slim
@@ -25,6 +36,17 @@ steps:
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
       - SCHEMA_PATH=${_SCHEMA_PATH}
       - VERTEX_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
+      - TRAIN_TABLE=${_TRAIN_TABLE}
+      - VALID_TABLE=${_VALID_TABLE}
+      - BATCH_SIZE=${_BATCH_SIZE}
+      - EPOCHS=${_EPOCHS}
+      - TRAIN_STEPS_PER_EPOCH=${_TRAIN_STEPS_PER_EPOCH}
+      - VALIDATION_STEPS=${_VALIDATION_STEPS}
+      - HIDDEN_UNITS=${_HIDDEN_UNITS}
+      - LEARNING_RATE=${_LEARNING_RATE}
+      - DROPOUT_RATE=${_DROPOUT_RATE}
+      - LABEL_SCALE=${_LABEL_SCALE}
+      - TRAINING_IMAGE_URI=${_TRAINING_IMAGE_URI}
       - PYTHONPATH=/workspace
       - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
       - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
@@ -76,6 +98,17 @@ steps:
       - EVAL_DATA_PATH=${_EVAL_DATA_PATH}
       - SCHEMA_PATH=${_SCHEMA_PATH}
       - VERTEX_SERVICE_ACCOUNT=${_SERVICE_ACCOUNT}
+      - TRAIN_TABLE=${_TRAIN_TABLE}
+      - VALID_TABLE=${_VALID_TABLE}
+      - BATCH_SIZE=${_BATCH_SIZE}
+      - EPOCHS=${_EPOCHS}
+      - TRAIN_STEPS_PER_EPOCH=${_TRAIN_STEPS_PER_EPOCH}
+      - VALIDATION_STEPS=${_VALIDATION_STEPS}
+      - HIDDEN_UNITS=${_HIDDEN_UNITS}
+      - LEARNING_RATE=${_LEARNING_RATE}
+      - DROPOUT_RATE=${_DROPOUT_RATE}
+      - LABEL_SCALE=${_LABEL_SCALE}
+      - TRAINING_IMAGE_URI=${_TRAINING_IMAGE_URI}
       - PYTHONPATH=/workspace
       - MODEL_OUTPUT_DIR=gs://${_BUCKET}/project_completion/kfp_trained_dnn_model_${COMMIT_SHA}
       - PACKAGE_URI=gs://${_BUCKET}/project_completion/packages/project_completion_trainer-${COMMIT_SHA}.tar.gz
