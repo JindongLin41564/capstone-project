@@ -179,7 +179,7 @@ def build_dnn_model(hidden_units, learning_rate, dropout_rate, lookups, normaliz
     model = keras.Model(inputs=inputs, outputs=output)
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-        loss="mse",
+        loss=keras.losses.Huber(delta=0.25),
         metrics=[MeanAbsoluteError(name="scaled_mae"), RootMeanSquaredError(name="scaled_rmse")],
     )
     return model, embedding_config
