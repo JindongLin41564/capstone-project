@@ -640,7 +640,7 @@ root:
                     - --batch_size
                     - '64'
                     - --epochs
-                    - '10'
+                    - '20'
                     - --train_steps_per_epoch
                     - '1484'
                     - --validation_steps

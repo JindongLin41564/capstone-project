@@ -11,7 +11,7 @@ if __name__ == "__main__":
     parser.add_argument("--schema_path", default="")
     parser.add_argument("--output_dir", required=True)
     parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--train_steps_per_epoch", type=int, required=True)
     parser.add_argument("--validation_steps", type=int, required=True)
     parser.add_argument("--hidden_units", default="128 64 32")
