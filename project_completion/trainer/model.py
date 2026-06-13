@@ -177,11 +177,13 @@ def build_dnn_model(hidden_units, learning_rate, dropout_rate, lookups, normaliz
     # final metrics below are converted back to original day units.
     output = Dense(1, name="scaled_days_to_S90")(x)
     model = keras.Model(inputs=inputs, outputs=output)
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-        loss="mse",
-        metrics=[MeanAbsoluteError(name="scaled_mae"), RootMeanSquaredError(name="scaled_rmse")],
+
+    model.compile(    
+    optimizer=keras.optimizers.Adam(learning_rate=learning_rate),    
+    loss="mae",    
+    metrics=[MeanAbsoluteError(name="scaled_mae"), RootMeanSquaredError(name="scaled_rmse")],    
     )
+
     return model, embedding_config
 
 

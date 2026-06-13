@@ -10,9 +10,9 @@ substitutions:
   _SCHEMA_PATH: gs://qwiklabs-asl-03-7c1aaee9a503/jindong_lin/data/project_completion/schema/feature_schema.json
   _SERVICE_ACCOUNT: cloud-build-vertex-runner@qwiklabs-asl-03-7c1aaee9a503.iam.gserviceaccount.com
   _BATCH_SIZE: '64'
-  _EPOCHS: '20'
-  _TRAIN_STEPS_PER_EPOCH: '1489'
-  _VALIDATION_STEPS: '186'
+  _EPOCHS: '30'
+  _TRAIN_STEPS_PER_EPOCH: '1300'
+  _VALIDATION_STEPS: '130'
   _HIDDEN_UNITS: 128 64 32
   _LEARNING_RATE: '0.001'
   _DROPOUT_RATE: '0.2'
