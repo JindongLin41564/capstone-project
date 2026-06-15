@@ -1,8 +1,8 @@
 """Data processing helpers for Dataform-built project completion features.
 
 Dataform owns feature engineering. This module only copies the final feature
-table, creates train/valid/test splits from the data_split column, exports CSV
-files, and writes the feature schema contract consumed by the trainer.
+table, creates deterministic train/valid/test splits, exports CSV files, and
+writes the feature schema contract consumed by the trainer.
 """
 
 import json
@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 LABEL_COLUMN = "days_to_S90"
 ID_COLUMNS = ["so_nr", "projekt_id"]
-SPLIT_COLUMN = "data_split"
 EXCLUDE_PREFIXES = ["meta_"]
 CATEGORICAL_TYPES = {"STRING", "BOOL", "BOOLEAN"}
 NUMERIC_TYPES = {"INT64", "INTEGER", "FLOAT64", "FLOAT", "NUMERIC", "BIGNUMERIC"}
@@ -79,18 +78,24 @@ WHERE {LABEL_COLUMN} IS NOT NULL
 
 
 def build_split_sql(feature_table: str, train_table: str, valid_table: str, test_table: str) -> str:
+    split_expr = (
+        "ABS(MOD(FARM_FINGERPRINT(CONCAT("
+        "COALESCE(CAST(so_nr AS STRING), ''), '-', "
+        "COALESCE(CAST(projekt_id AS STRING), '')"
+        ")), 100))"
+    )
     return f"""
 CREATE OR REPLACE TABLE `{train_table}` AS
 SELECT * FROM `{feature_table}`
-WHERE {SPLIT_COLUMN} = 'train';
+WHERE {split_expr} < 80;
 
 CREATE OR REPLACE TABLE `{valid_table}` AS
 SELECT * FROM `{feature_table}`
-WHERE {SPLIT_COLUMN} = 'valid';
+WHERE {split_expr} BETWEEN 80 AND 89;
 
 CREATE OR REPLACE TABLE `{test_table}` AS
 SELECT * FROM `{feature_table}`
-WHERE {SPLIT_COLUMN} = 'test';
+WHERE {split_expr} >= 90;
 """
 
 
@@ -124,9 +129,6 @@ def build_feature_schema(table) -> dict:
             continue
         if name in ID_COLUMNS:
             id_columns.append(name)
-            continue
-        if name == SPLIT_COLUMN:
-            excluded_columns.append(name)
             continue
         if any(name.startswith(prefix) for prefix in EXCLUDE_PREFIXES):
             excluded_columns.append(name)
