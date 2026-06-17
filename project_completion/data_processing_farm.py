@@ -8,13 +8,11 @@ writes the feature schema contract consumed by the trainer.
 import json
 from dataclasses import dataclass
 
-
 LABEL_COLUMN = "days_to_S90"
 ID_COLUMNS = ["so_nr", "projekt_id"]
 EXCLUDE_PREFIXES = ["meta_"]
 CATEGORICAL_TYPES = {"STRING", "BOOL", "BOOLEAN"}
 NUMERIC_TYPES = {"INT64", "INTEGER", "FLOAT64", "FLOAT", "NUMERIC", "BIGNUMERIC"}
-
 
 @dataclass(frozen=True)
 class DataProcessingConfig:
