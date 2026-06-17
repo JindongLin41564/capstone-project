@@ -2,6 +2,7 @@
 
 import json
 import os
+import platform
 import tempfile
 from pathlib import Path
 
@@ -12,6 +13,7 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 import joblib
 import numpy as np
 import pandas as pd
+import sklearn
 import tensorflow as tf
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingRegressor
@@ -130,6 +132,11 @@ def write_json(path, payload):
         json.dump(payload, f, indent=2, sort_keys=True)
 
 
+def read_json(path):
+    with tf.io.gfile.GFile(path, "r") as f:
+        return json.load(f)
+
+
 def write_dataframe_csv(path, data):
     with tf.io.gfile.GFile(path, "w") as f:
         data.to_csv(f, index=False)
@@ -186,6 +193,62 @@ def save_joblib_gcs_compatible(model, output_path):
         joblib.dump(model, output_path)
 
 
+def model_dir_from_path(model_path):
+    return model_path.rsplit("/", 1)[0]
+
+
+def dependency_metadata():
+    return {
+        "python_version": platform.python_version(),
+        "joblib_version": joblib.__version__,
+        "numpy_version": np.__version__,
+        "pandas_version": pd.__version__,
+        "scikit_learn_version": sklearn.__version__,
+        "tensorflow_version": tf.__version__,
+    }
+
+
+def assert_model_dependency_compatible(model_path):
+    metadata_path = os.path.join(model_dir_from_path(model_path), "model_metadata.json")
+    if not tf.io.gfile.exists(metadata_path):
+        raise RuntimeError(
+            "model_metadata.json was not found next to model.joblib. "
+            "This is probably an old model artifact. Retrain to a new output_dir "
+            "with the current project code before loading."
+        )
+
+    metadata = read_json(metadata_path)
+    trained_versions = metadata.get("dependency_versions", {})
+    current_versions = dependency_metadata()
+    checks = [
+        ("scikit_learn_version", "scikit-learn"),
+        ("joblib_version", "joblib"),
+    ]
+    mismatches = []
+    for key, label in checks:
+        trained = trained_versions.get(key)
+        current = current_versions.get(key)
+        if trained and current and trained != current:
+            mismatches.append(f"{label}: trained={trained}, current={current}")
+
+    if mismatches:
+        raise RuntimeError(
+            "Model dependency version mismatch. Do not load this model.joblib. "
+            "Retrain with the current environment or use the exact training environment. "
+            + "; ".join(mismatches)
+        )
+    return metadata
+
+
+def load_joblib_gcs_compatible(model_path):
+    assert_model_dependency_compatible(model_path)
+    if model_path.startswith("gs://"):
+        with tempfile.NamedTemporaryFile(suffix=".joblib") as tmp:
+            tf.io.gfile.copy(model_path, tmp.name, overwrite=True)
+            return joblib.load(tmp.name)
+    return joblib.load(model_path)
+
+
 def write_tensorboard_logs(model, x_train, y_train, x_eval, y_eval, tensorboard_dir, label_scale):
     writer = tf.summary.create_file_writer(tensorboard_dir)
     regressor = model.named_steps["model"]
@@ -234,6 +297,7 @@ def train_and_evaluate(hparams):
     tensorboard_dir = os.environ.get("AIP_TENSORBOARD_LOG_DIR") or os.path.join(output_dir, "tensorboard")
     model_path = os.path.join(output_dir, "model.joblib")
     metrics_path = os.path.join(output_dir, "metrics.json")
+    metadata_path = os.path.join(output_dir, "model_metadata.json")
 
     train_df = read_csv_dataset(train_data_path, schema)
     eval_df = read_csv_dataset(eval_data_path, schema)
@@ -277,20 +341,37 @@ def train_and_evaluate(hparams):
             "model_path": model_path,
             "feature_importance_encoded_path": encoded_importance_path,
             "feature_importance_by_original_feature_path": original_importance_path,
+            "dependency_versions": dependency_metadata(),
         }
     )
+
+    metadata = {
+        "model_path": model_path,
+        "model_type": "sklearn.ensemble.GradientBoostingRegressor",
+        "dependency_versions": dependency_metadata(),
+        "training_hparams": {
+            "n_estimators": n_estimators,
+            "max_depth": max_depth,
+            "learning_rate": learning_rate,
+            "random_state": random_state,
+            "label_scale": label_scale,
+        },
+        "schema_path": schema_path,
+    }
 
     write_tensorboard_logs(model, x_train, y_train, x_eval, y_eval, tensorboard_dir, label_scale)
     save_joblib_gcs_compatible(model, model_path)
     write_dataframe_csv(encoded_importance_path, encoded_importance)
     write_dataframe_csv(original_importance_path, original_importance)
     write_json(metrics_path, metrics)
+    write_json(metadata_path, metadata)
 
     print(json.dumps(metrics, indent=2, sort_keys=True))
     print("Top feature importance by original feature:")
     print(original_importance.head(20).to_string(index=False))
     print(f"Saved GBDT model to: {model_path}")
     print(f"Saved metrics to: {metrics_path}")
+    print(f"Saved model metadata to: {metadata_path}")
     print(f"Saved encoded feature importance to: {encoded_importance_path}")
     print(f"Saved original feature importance to: {original_importance_path}")
     print(f"TensorBoard logs: {tensorboard_dir}")

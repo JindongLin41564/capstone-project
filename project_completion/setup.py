@@ -9,11 +9,11 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        "joblib",
-        "numpy",
-        "pandas",
-        "scikit-learn",
-        "tensorflow",
+        "joblib==1.5.3",
+        "numpy==1.26.4",
+        "pandas==3.0.3",
+        "scikit-learn==1.9.0",
+        "tensorflow==2.17.1",
     ],
     description="GBDT project completion time prediction training package.",
 )
