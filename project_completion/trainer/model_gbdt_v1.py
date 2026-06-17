@@ -16,7 +16,7 @@ import tensorflow as tf
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
@@ -120,7 +120,6 @@ def regression_metrics(y_true, y_pred, label_scale):
         "eval_loss_mse": float(mse),
         "eval_mae_days": float(mean_absolute_error(true_days, pred_days)),
         "eval_rmse_days": float(np.sqrt(mse)),
-        "eval_r2": float(r2_score(true_days, pred_days)),
         "eval_rows": int(true_days.shape[0]),
     }
 
@@ -128,51 +127,6 @@ def regression_metrics(y_true, y_pred, label_scale):
 def write_json(path, payload):
     with tf.io.gfile.GFile(path, "w") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
-
-
-def write_dataframe_csv(path, data):
-    with tf.io.gfile.GFile(path, "w") as f:
-        data.to_csv(f, index=False)
-
-
-def infer_original_feature_name(encoded_feature_name, schema):
-    name = encoded_feature_name.split("__", 1)[-1]
-    for feature_name in sorted(schema["categorical_features"], key=len, reverse=True):
-        if name == feature_name or name.startswith(f"{feature_name}_"):
-            return feature_name
-    for feature_name in schema["numeric_features"]:
-        if name == feature_name:
-            return feature_name
-    return name
-
-
-def build_feature_importance_frames(model, schema):
-    preprocessor = model.named_steps["preprocess"]
-    regressor = model.named_steps["model"]
-    encoded_feature_names = preprocessor.get_feature_names_out()
-    importances = regressor.feature_importances_
-
-    encoded_importance = (
-        pd.DataFrame(
-            {
-                "encoded_feature": encoded_feature_names,
-                "importance": importances,
-            }
-        )
-        .sort_values("importance", ascending=False)
-        .reset_index(drop=True)
-    )
-    encoded_importance["original_feature"] = encoded_importance["encoded_feature"].map(
-        lambda name: infer_original_feature_name(name, schema)
-    )
-
-    original_importance = (
-        encoded_importance.groupby("original_feature", as_index=False)["importance"]
-        .sum()
-        .sort_values("importance", ascending=False)
-        .reset_index(drop=True)
-    )
-    return encoded_importance, original_importance
 
 
 def save_joblib_gcs_compatible(model, output_path):
@@ -203,7 +157,6 @@ def write_tensorboard_logs(model, x_train, y_train, x_eval, y_eval, tensorboard_
             eval_pred_days = eval_pred * label_scale
             tf.summary.scalar("train_mae_days", mean_absolute_error(train_true_days, train_pred_days), step=step)
             tf.summary.scalar("eval_mae_days", mean_absolute_error(eval_true_days, eval_pred_days), step=step)
-            tf.summary.scalar("eval_r2", r2_score(eval_true_days, eval_pred_days), step=step)
             tf.summary.scalar(
                 "eval_rmse_days",
                 np.sqrt(mean_squared_error(eval_true_days, eval_pred_days)),
@@ -252,18 +205,11 @@ def train_and_evaluate(hparams):
     eval_pred = model.predict(x_eval)
     metrics = regression_metrics(y_eval, eval_pred, label_scale=label_scale)
     train_pred = model.predict(x_train)
-    y_train_days = y_train * label_scale
-    train_pred_days = train_pred * label_scale
-    train_mse = mean_squared_error(y_train_days, train_pred_days)
-
-    encoded_importance, original_importance = build_feature_importance_frames(model, schema)
-    encoded_importance_path = os.path.join(output_dir, "feature_importance_encoded.csv")
-    original_importance_path = os.path.join(output_dir, "feature_importance_by_original_feature.csv")
+    train_mse = mean_squared_error(y_train * label_scale, train_pred * label_scale)
     metrics.update(
         {
-            "train_mae_days": float(mean_absolute_error(y_train_days, train_pred_days)),
+            "train_mae_days": float(mean_absolute_error(y_train * label_scale, train_pred * label_scale)),
             "train_rmse_days": float(np.sqrt(train_mse)),
-            "train_r2": float(r2_score(y_train_days, train_pred_days)),
             "train_rows": int(y_train.shape[0]),
             "model_type": "sklearn.ensemble.GradientBoostingRegressor",
             "n_estimators": n_estimators,
@@ -275,22 +221,14 @@ def train_and_evaluate(hparams):
             "feature_schema": schema,
             "tensorboard_dir": tensorboard_dir,
             "model_path": model_path,
-            "feature_importance_encoded_path": encoded_importance_path,
-            "feature_importance_by_original_feature_path": original_importance_path,
         }
     )
 
     write_tensorboard_logs(model, x_train, y_train, x_eval, y_eval, tensorboard_dir, label_scale)
     save_joblib_gcs_compatible(model, model_path)
-    write_dataframe_csv(encoded_importance_path, encoded_importance)
-    write_dataframe_csv(original_importance_path, original_importance)
     write_json(metrics_path, metrics)
 
     print(json.dumps(metrics, indent=2, sort_keys=True))
-    print("Top feature importance by original feature:")
-    print(original_importance.head(20).to_string(index=False))
     print(f"Saved GBDT model to: {model_path}")
     print(f"Saved metrics to: {metrics_path}")
-    print(f"Saved encoded feature importance to: {encoded_importance_path}")
-    print(f"Saved original feature importance to: {original_importance_path}")
     print(f"TensorBoard logs: {tensorboard_dir}")
