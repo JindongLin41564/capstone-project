@@ -1,4 +1,4 @@
-"""Create or reuse the Vertex AI TensorBoard used by CI/CD training jobs."""
+"""Create or reuse the Vertex AI TensorBoard used by custom training jobs."""
 
 import contextlib
 import os
